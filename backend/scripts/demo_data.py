@@ -5,3 +5,5 @@ HAND_NODES=[{'node_id':'F','label':'手算故障','parents':[]},{'node_id':'S','
 HAND_CPT=[{'node_id':'F','parent_values':[],'p0':.8,'p1':.2},{'node_id':'S','parent_values':[0],'p0':.9,'p1':.1},{'node_id':'S','parent_values':[1],'p0':.2,'p1':.8}]
 TINY_NODES=[{'node_id':n,'label':n,'parents':[]} for n in ['A','B','Q']]
 TINY_CPT=[{'node_id':n,'parent_values':[],'p0':1. if n!='Q' else .8,'p1':1e-200 if n!='Q' else .2} for n in ['A','B','Q']]
+PLAN_COSTS={'Indicator':1,'Lock':4,'Power':2,'Vibration':1}
+PLAN_BUDGET=3

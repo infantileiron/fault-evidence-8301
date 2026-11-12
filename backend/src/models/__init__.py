@@ -4,6 +4,7 @@ from .revision import CptRevision
 from .cpt_row import CptRow
 from .case import EvidenceCase
 from .run import InferenceRun
+from .plan import ObservationPlan
 from .posterior_state import PosteriorState
 from .candidate_metric import CandidateMetric
 from .branch_metric import BranchMetric

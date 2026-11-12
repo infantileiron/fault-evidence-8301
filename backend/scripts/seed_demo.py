@@ -10,12 +10,14 @@ from src.models.revision import CptRevision
 from src.models.cpt_row import CptRow
 from src.models.case import EvidenceCase
 from src.models.run import InferenceRun
+from src.models.plan import ObservationPlan
 from src.models.review import EvidenceReview
 from src.models.report import Report
 from src.utils.security import hash_password
 from src.services.network_validation import validate_cpt,validate_evidence
 from src.services.run_service import compute
-from scripts.demo_data import DEMO_NODES,DEMO_CPT,HAND_NODES,HAND_CPT,TINY_NODES,TINY_CPT
+from src.services import plan_service
+from scripts.demo_data import DEMO_NODES,DEMO_CPT,HAND_NODES,HAND_CPT,TINY_NODES,TINY_CPT,PLAN_COSTS,PLAN_BUDGET
 
 def seed():
  initialize()
@@ -35,11 +37,14 @@ def seed():
    if not db.get(EvidenceCase,ident):db.add(EvidenceCase(id=ident,name=name,revision_id=rid,target=target,evidence=evidence,candidates=validate_evidence(nodes,evidence,target)))
   db.flush()
   if not db.get(InferenceRun,'demo-run'):db.add(InferenceRun(id='demo-run',case_id='demo-case',status='queued',result={},error=''))
+  if not db.get(ObservationPlan,'demo-plan'):db.add(ObservationPlan(id='demo-plan',case_id='demo-case',budget=PLAN_BUDGET,costs=PLAN_COSTS,status='queued',result={},error=''))
   db.commit();run=db.get(InferenceRun,'demo-run')
   if run.status=='queued':compute(db,'demo-run')
+  plan=db.get(ObservationPlan,'demo-plan')
+  if plan.status=='queued':plan_service.compute(db,'demo-plan')
   run=db.get(InferenceRun,'demo-run')
   if run.status=='completed':
    if not db.get(EvidenceReview,'demo-review'):db.add(EvidenceReview(id='demo-review',run_id='demo-run',action='已核对CPT r1、证据logZ及候选分支；仅模拟研修，信息增益不等于故障修复收益。',state='approved',reviewer='admin@evidence.demo'));db.flush()
    if not db.get(Report,'demo-report'):db.add(Report(id='demo-report',review_id='demo-review',title='CY-07 联合证据研修底稿',snapshot={'result':run.result,'action':'已核对CPT、logZ、分支与研修限制','reviewer':'admin@evidence.demo'}))
-  db.commit();counts={t.__tablename__:db.scalar(select(func.count()).select_from(t)) for t in [User,BayesNetwork,NetworkNode,CptRevision,CptRow,EvidenceCase,InferenceRun,EvidenceReview,Report]};print(json.dumps(counts));return counts
+  db.commit();counts={t.__tablename__:db.scalar(select(func.count()).select_from(t)) for t in [User,BayesNetwork,NetworkNode,CptRevision,CptRow,EvidenceCase,InferenceRun,ObservationPlan,EvidenceReview,Report]};print(json.dumps(counts));return counts
 if __name__=='__main__':seed()

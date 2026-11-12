@@ -1,6 +1,6 @@
 # 澄翼研修 · 故障证据概率推理
 
-在给定的二元DAG与不可变CPT版本中，计算证据后的精确后验，并比较候选观测的期望信息增益。每份底稿保留证据分母、对数概率、消元操作和分支依据。
+在给定的二元DAG与不可变CPT版本中，计算证据后的精确后验，比较候选观测的期望信息增益，并在正整数成本与总预算约束下生成期望剩余熵最低的自适应观测计划。每份底稿保留证据分母、对数概率、消元操作、分支依据与计划路径上的累计成本。
 
 ## 研修场景
 
@@ -23,9 +23,10 @@
 5. 09:20 点选Vibration，核对两分支权重、条件后验和熵；其IG约0.393832 bit，原始IG和基准分母一起保留。
 6. 09:25 查看词典序消元Indicator→Lock→Power→Vibration的真实因子作用域与单元数。
 7. 09:30 运行「两项1e-200证据仍可行」：logZ约−921.034037，exp下溢为0但证据仍可行。再运行Fault=0、Lock=1的零概率反例，应明确失败。
-8. 09:40 分析师提交说明，主管批准并生成不可变快照；助理下载后验/候选/分支CSV，连同版本和SHA256归档。
+8. 09:35 打开「观测计划」：为Indicator/Lock/Power/Vibration设成本1/4/2/1、总预算3，worker重算自适应计划——先观测Power，两分支各再以Vibration续查，期望剩余熵从0.924045降到约0.477176 bit；把Lock成本改为3再保存，新计划改为直接观测Lock（剩余熵0），旧计划与CPT r1绑定不变。
+9. 09:40 分析师提交说明，主管批准并生成不可变快照；助理下载后验/候选/分支CSV，连同版本和SHA256归档。
 
-## 六聚合与页面
+## 七聚合与页面
 
 |聚合|职责|页面|
 |---|---|---|
@@ -33,6 +34,7 @@
 |CptRevision|不可变网络版本与完整条件概率|概率版本|
 |EvidenceCase|绑定版本、证据、查询目标与候选集合|证据案例|
 |InferenceRun|异步状态、快照、后验、候选分支与VE留痕|推理底稿|
+|ObservationPlan|成本规则与预算快照、自适应观测树与期望剩余熵|观测计划|
 |EvidenceReview|分析师说明与主管批准状态|研修归档|
 |Report|批准后的不可变报告与CSV|研修归档|
 
@@ -48,7 +50,7 @@ CPT行JSON为 `[{"node_id":"F","parent_values":[],"p0":0.8,"p1":0.2},...]`。每
 
 证据JSON为已知节点的0/1映射，布尔值不替代二元整数。候选JSON为null（所有未观测非目标节点）或不重复的节点数组；观测节点和目标不能混入候选。
 
-## 两个Python算法
+## 三个Python算法
 
 ### log因子消元精确后验
 
@@ -68,6 +70,16 @@ CPT行JSON为 `[{"node_id":"F","parent_values":[],"p0":0.8,"p1":0.2},...]`。每
 
 IG是给定模型内的期望不确定性下降，不等于维修收益、风险降低或观测的现实可实施性。模型依赖给定DAG的条件独立结构和人工CPT；不拟合参数，不学习因果，不构造现实诊断保证。
 
+### 预算约束的自适应观测计划
+
+`services.observation_plan.observation_plan(nodes,cpt,evidence,target,budget,costs,candidates=None)` 在单次IG排行之外回答「预算有限时按什么顺序观察」。每个候选观测绑定正整数成本，计划给定非负整数总预算，用动态规划在（累计证据，剩余预算）状态上求期望剩余熵最低的自适应策略：
+
+`V(E,b)=min(H(Q|E), min_X Σ_x P(X=x|E)·V(E∪{X=x}, b−成本_X))`，X取剩余预算可负担的候选。
+
+每个节点都可选择停止，因此允许提前结束；已观测节点离开候选集合，每条路径不重复观测且累计成本不超支。期望剩余熵下降不超过1e−12 bit视为无收益并停止，同价时偏向停止与词典序，结果确定。底稿是一棵决策树：每个节点给出累计成本、剩余预算、目标后验与熵，每个分支给出分支概率P(X=x|E)、对数概率与下溢标记。严格零概率分支跳过（不展开子计划，避免不可能证据）；log概率有限但exp下溢的极小正分支仍展开，仅浮点权重可能为0。状态数超过6000（按候选×分支×预算上界估计）拒绝并提示缩小候选或预算。
+
+计划经Redis worker异步计算，快照完整DAG/CPT/证据/目标/候选/成本/预算/版本及SHA256。成本规则更新后再次保存即生成新计划；旧计划与案例绑定的概率版本均不被覆盖。期望剩余熵最低只是给定模型与成本规则内的排程依据，不等于现实维修收益。
+
 ### 手算与极小概率
 
 F先验0.2；P(S=1|F=1)=0.8、P(S=1|F=0)=0.1，则P(S=1)=0.24，S=1后P(F=1)=2/3。无证据时观测S的IG约0.2754581855 bit。两个独立事件各1e−200同时为1时logZ=2*ln(1e−200)≈−921.034037，证据可行；不能因浮点乘积变0而报不可能。
@@ -85,7 +97,7 @@ docker compose exec backend python scripts/seed_demo.py
 
 前端 http://localhost:18235；后端 http://localhost:19235/docs；健康检查 `/health`。MySQL端口17735，库/用户名evidence，演示密码evidence_demo。
 
-账号 `admin@evidence.demo`、`analyst@evidence.demo`、`viewer@evidence.demo`，统一密码 `EvidenceDemo2026!`。首次启动 `SEED_DEMO=true` 自动seed；固定自然ID只补缺，不覆盖用户说明。seed包括7节点主图、F/S手算图、极小正证据图与5个练习案例。基线由seed直接计算以便首次打开，新建运行真实经过Redis worker。
+账号 `admin@evidence.demo`、`analyst@evidence.demo`、`viewer@evidence.demo`，统一密码 `EvidenceDemo2026!`。首次启动 `SEED_DEMO=true` 自动seed；固定自然ID只补缺，不覆盖用户说明。seed包括7节点主图、F/S手算图、极小正证据图、5个练习案例与1个预算3的演示观测计划。基线与演示计划由seed直接计算以便首次打开，新建运行与计划真实经过Redis worker。
 
 ```sh
 docker compose ps
@@ -105,7 +117,7 @@ docker compose down -v --remove-orphans
 |存储|MySQL8.4，实际验收8.4.11；Redis7.4|
 |五服务|frontend/Nginx1.28、backend、worker、db、redis|
 
-`backend/src/{models,schemas,services,controllers,routes}`贯穿六聚合；`middlewares`处理审计与全局错误，`utils`负责JWT/PBKDF2/队列；`backend/scripts/seed_demo.py`及demo_data定义自然键演示数据。新库按SQLAlchemy metadata建表，已有生产库需审查增量迁移。
+`backend/src/{models,schemas,services,controllers,routes}`贯穿七聚合；`middlewares`处理审计与全局错误，`utils`负责JWT/PBKDF2/队列；`backend/scripts/seed_demo.py`及demo_data定义自然键演示数据。新库按SQLAlchemy metadata建表（含plans表），已有生产库需审查增量迁移。
 
 `frontend/src/{api,stores,types,components/common,hooks,pages,router,utils,constants}`拆分职责。Python完成全部概率计算、业务校验与持久化，前端只输入、选择与展示结果。
 
